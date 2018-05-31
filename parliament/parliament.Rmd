@@ -1,0 +1,130 @@
+---
+title: "Parliament"
+author: "Fousseynou Bah"
+date: "May 31, 2018"
+output: slidy_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+load(file = "parliament.RData")
+
+##########################################################################
+########################################/// PACKAGES ///
+##########################################################################
+library("tidyverse")
+library("plotly")
+#Setting the theme for ggplot
+theme_set(theme_bw())
+
+```
+
+
+# A glimpse of the balance of power
+
+
+```{r district_balance, echo=FALSE, fig.align='center',fig.show='animate', message=FALSE, warning=FALSE,out.width="90%"}
+
+districts <- mp_df %>% filter(!is.na(firstname)) %>% group_by(district) %>% summarise(number = n())
+shares_mp_list <- list()
+
+for(i in districts$district){
+  
+  shares_mp_list[[i]] <- 
+    mp_df %>% 
+    filter(!is.na(firstname)) %>% 
+    group_by(party, district) %>% 
+    summarise(elected = n()) %>%
+    mutate(one = 1) %>% 
+    filter(district == i) %>% # filter(district == districts[i, "district"]) 
+    ggplot() +
+    geom_col(aes(x = district, y = elected, fill = party), width = 1) +
+    coord_polar(theta = "y") +
+    theme(legend.position = "bottom") +
+    theme(axis.line = element_blank(),
+          axis.text = element_blank(),
+          axis.ticks = element_blank()) +
+#    theme(panel.background = element_rect(fill = "white")) +
+    scale_fill_brewer(type = "seq", palette = "Set2") +
+    labs(x = "", y = "", fill = "Party",
+       title = paste(i),
+       subtitle = paste("Legislature 2014-2018:", districts[districts$district==i, "number"], "parliament member(s)"),
+       caption = "Source: Data from http://assemblee-nationale.ml/liste-des-deputes/")
+  
+  print(shares_mp_list[[i]])
+
+}
+
+
+```
+
+
+
+# An overview with mapping
+
+```{r parliament_map_gen, echo=FALSE, fig.align='center',fig.show='animate', message=FALSE, warning=FALSE,out.width="90%"}
+
+##########################################################################
+### A particular shapefile: mixing districts and counties (communes)
+
+map_districts <- bind_rows(
+  map_cercles %>% 
+    filter(!(Admin1_Nam == "Bamako")) %>% 
+    mutate(source = "cercles"),
+  map_communes %>% 
+    filter(Admin2_Nam == "Bamako") %>% 
+    mutate(source = "communes")
+  ) %>% 
+  mutate(shapefile = as.character(Admin2_Nam))
+
+
+##########################################################################
+### A wide data frame of elected officials per district per party
+
+elected_districts <- 
+  mp_df %>% 
+  group_by(district, party) %>% 
+  filter(!is.na(firstname)) %>% 
+  summarise(nbr = n(),
+            elected = ifelse(nbr > 0, 1, 0)) %>%
+#  spread(key = party, value = elected) %>% 
+  mutate(parliament = district) %>% 
+  left_join(join_districts,
+            by = c("parliament"))
+
+
+##########################################################################
+### Mapping with ggplot2
+parties <- elected_districts %>% group_by(party) %>% summarise(n())
+parties_map_list <- list()
+
+for(i in 1:nrow(parties)){
+  parties_map_list[[i]] <- 
+    elected_districts %>% 
+    right_join(map_districts, by = c("shapefile")) %>% 
+    filter(party == elected_districts[i, "party"]) %>% 
+    ggplot() +
+    geom_polygon(data = map_cercles, aes(x = long, y = lat, group = group), fill = "grey80") +
+    geom_path(data = map_cercles, aes(x = long, y = lat, group = group), colour = "white", size = 0.025) +
+    geom_polygon(aes(x = long, y = lat, group = group), fill = "darkorange", alpha = 1) +
+    geom_path(aes(x = long, y = lat, group = group), colour = "white", size = 0.025) +
+    coord_map() +
+    theme(legend.position = "none") +
+    theme(axis.line = element_blank(),
+          axis.text = element_blank(),
+          axis.ticks = element_blank()) +
+    theme(strip.background = element_rect(fill = "transparent")) +
+    theme(panel.grid = element_blank(),
+          panel.border = element_blank()) +
+    labs(x = "", y = "", color = "Année",
+       title = paste(elected_districts[i, "party"]),
+       subtitle = paste("Legislature 2014-2018"),
+       caption = "Source: Data from http://assemblee-nationale.ml/liste-des-deputes/")
+  
+  print(parties_map_list[[i]])
+# parties_map_list[[i]] <- ggplotly(parties_map_list[[i]])
+  
+}
+
+```
+
