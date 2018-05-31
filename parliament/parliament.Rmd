@@ -48,7 +48,7 @@ for(i in districts$district){
     scale_fill_brewer(type = "seq", palette = "Set2") +
     labs(x = "", y = "", fill = "Party",
        title = paste(i),
-       subtitle = paste("Legislature 2014-2018:", districts[districts$district==i, "number"], "parliament member(s)"),
+       subtitle = paste("Legislature 2014-2018:", districts[districts$district==i, "number"], "seat(s)"),
        caption = "Source: Data from http://assemblee-nationale.ml/liste-des-deputes/")
   
   print(shares_mp_list[[i]])
@@ -75,7 +75,9 @@ map_districts <- bind_rows(
     filter(Admin2_Nam == "Bamako") %>% 
     mutate(source = "communes")
   ) %>% 
-  mutate(shapefile = as.character(Admin2_Nam))
+  mutate(shapefile = case_when(source == "cercles" ~ as.character(Admin2_Nam),
+                               source == "communes" ~ as.character(Admin3_Nam)),
+         shapefile = str_trim(shapefile))
 
 
 ##########################################################################
@@ -83,42 +85,55 @@ map_districts <- bind_rows(
 
 elected_districts <- 
   mp_df %>% 
-  group_by(district, party) %>% 
   filter(!is.na(firstname)) %>% 
-  summarise(nbr = n(),
-            elected = ifelse(nbr > 0, 1, 0)) %>%
-#  spread(key = party, value = elected) %>% 
+  group_by(district, party) %>% 
+  summarise(count = n()) %>%
+  spread(key = party, value = count) %>% 
   mutate(parliament = district) %>% 
   left_join(join_districts,
-            by = c("parliament"))
-
+            by = c("parliament")) %>% 
+  gather(key = party, value = count, -c(district, parliament, shapefile)) %>%
+  group_by(parliament, shapefile, party) %>% 
+  summarise(count = sum(count, na.rm = TRUE)) %>% 
+  mutate(elected = ifelse(count > 0, 1, 0),
+         elected = factor(elected, 
+                          levels = c(1,0),
+                          labels = c("Elected", "Not elected"),
+                          ordered = TRUE)) 
 
 ##########################################################################
 ### Mapping with ggplot2
-parties <- elected_districts %>% group_by(party) %>% summarise(n())
+parties <- 
+  elected_districts %>% 
+  group_by(party) %>% 
+  summarise(districts = sum(elected == "Elected", na.rm = TRUE),
+            seats = sum(count, na.rm = TRUE))
+
 parties_map_list <- list()
 
-for(i in 1:nrow(parties)){
+for(i in parties$party){
   parties_map_list[[i]] <- 
-    elected_districts %>% 
-    right_join(map_districts, by = c("shapefile")) %>% 
-    filter(party == elected_districts[i, "party"]) %>% 
+    map_districts %>% 
+    left_join(
+      elected_districts %>% filter(party == i),
+      by = c("shapefile")) %>% 
     ggplot() +
-    geom_polygon(data = map_cercles, aes(x = long, y = lat, group = group), fill = "grey80") +
-    geom_path(data = map_cercles, aes(x = long, y = lat, group = group), colour = "white", size = 0.025) +
-    geom_polygon(aes(x = long, y = lat, group = group), fill = "darkorange", alpha = 1) +
+    geom_polygon(aes(x = long, y = lat, group = group, fill = elected)) +
     geom_path(aes(x = long, y = lat, group = group), colour = "white", size = 0.025) +
     coord_map() +
-    theme(legend.position = "none") +
+    theme(legend.position = "bottom") +
     theme(axis.line = element_blank(),
           axis.text = element_blank(),
           axis.ticks = element_blank()) +
     theme(strip.background = element_rect(fill = "transparent")) +
     theme(panel.grid = element_blank(),
           panel.border = element_blank()) +
-    labs(x = "", y = "", color = "Année",
-       title = paste(elected_districts[i, "party"]),
-       subtitle = paste("Legislature 2014-2018"),
+    scale_fill_manual(values = c("darkorange", "grey80")) +
+    labs(x = "", y = "", fill = "",
+       title = paste(i),
+       subtitle = paste("Legislature 2014-2018:", 
+                        parties$districts[parties$party == i], "district(s) and",
+                        parties$seats[parties$party == i], "seat(s)"),
        caption = "Source: Data from http://assemblee-nationale.ml/liste-des-deputes/")
   
   print(parties_map_list[[i]])
