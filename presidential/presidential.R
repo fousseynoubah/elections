@@ -1,74 +1,57 @@
 ##########################################################################
 ########################################/// FUSEAU HORAIRE ///
 ##########################################################################
-#Sys.setenv(TZ="Africa/Bamako") #Sys.getenv("TZ") # to check
+Sys.setenv(TZ="Africa/Bamako") #Sys.getenv("TZ") # to check
 
 ##########################################################################
 ########################################/// PACKAGES ///
 ##########################################################################
-library("tidyverse")
-#library("rvest")
-library("downloader")
-library("readxl")
-library("rgdal")
-#library("pdftools")
-#library("glue")
-#library("ggthemes")
-
-##########################################################################
-########################################/// THEME ///
-##########################################################################
-#Setting the theme for ggplot
-theme_set(theme_bw())
-
-##########################################################################
-########################################/// CONNEXION ODBC ///
-##########################################################################
-#Connexion au DSN (Data Source Name): création d'un chaîne de connexion
-#aeroports.odbc <- odbcConnect(dsn ="aeroports", uid = " ", pwd = " ")  # Source de dépôt
+library(tidyverse)
+library(downloader)
+library(readxl)
+#library(rgdal)
+library(sf)
 
 
 ##########################################################################
-########################################/// PRESIDENTIAL 2013
+########################################/// PRESIDENTIAL 2018: DATA
 ##########################################################################
 
-############################## PRESIDENTIAL: 2013
-## 2013
-
-#url2013 <- "https://en.wikipedia.org/wiki/Malian_presidential_election,_2013"
-
-#url <- "http://africanelections.tripod.com/ml.html#2007_Presidential_Election"
-
-#tableau <- 
-#  url2013 %>% 
-#  paste() %>% 
-#  read_html() %>% 
-#  html_nodes('table')%>% 
-#  html_table(fill = TRUE)
-
-#dataframe <- map(tableau, as_data_frame)
-
-##########################################################################
-########################################/// PRESIDENTIAL 2018
-##########################################################################
 # Age
-list_age <- read_excel("presidential/liste_electorale.xlsx", sheet = "age")
-names(list_age) <- c("age", "male", "female", "total")
-list_age <- list_age %>% 
+presidential_voters_age <- read_excel("presidential/presidential_data.xlsx", sheet = "voters_age")
+names(presidential_voters_age) <- c("age", "male", "female", "total")
+presidential_voters_age <- presidential_voters_age %>% 
   gather(key = group, value = voters, -age)
 
 # Population
-popage2009 <- read_excel("presidential/liste_electorale.xlsx", sheet = "popage2009")
+census_2009_popage <- read_excel("presidential/presidential_data.xlsx", sheet = "popage_2009")
 
-popage2009 <- popage2009 %>% 
+census_2009_popage <- census_2009_popage %>% 
   gather(key = group, value = population, -c(code, age)) %>% 
   separate(group, c("sex", "situation"), sep = "_")
 
-# Commune
-list_commune <- read_excel("presidential/liste_electorale.xlsx", sheet = "commune")
+# Withdrawal (region)
+presidential_withdrawal_region <-  read_excel("presidential/presidential_data.xlsx", sheet = "retrait_region")
 
-list_commune <- list_commune %>% 
-  filter(!is.na(Admin0_Nam))
+  
+# Withdrawal (district)
+presidential_withdrawal_district <- read_excel("presidential/presidential_data.xlsx", sheet = "retrait_cercle")
+  
+# Candidates
+presidential_candidates <- read_excel("presidential/presidential_data.xlsx", sheet = "CANDIDATES")
+
+# List
+presidential_list <- read_excel("presidential/presidential_data.xlsx", sheet = "LIST")
+
+# Results
+presidential_results <- list()
+for(i in c("KAYES","KOULIKORO", "SIKASSO", "SEGOU", "MOPTI", "TOMBOUCTOU", "GAO", "KIDAL", "BAMAKO")){
+  presidential_results[[i]] <- read_excel(path = "presidential/presidential_data.xlsx", sheet = paste0(i) )
+}
+
+presidential_results <- do.call(rbind, presidential_results)
+
+rm(i)
 
 ##########################################################################
 ########################################/// CARTOGRAPHIE : TELECHARGEMENT ET TRANSFORMATION DES SHAPEFILES
@@ -95,21 +78,12 @@ for(i in 1:nrow(map_df)){
 shp_list <- list()
 
 for(i in 1:nrow(map_df)){
-  myshp <- readOGR(paste0(map_df[i, "name"],"/","mli_admbnda_adm", i ,"_pop_2017.shp"))
-  shp_list[[i]] <- maps::map(myshp) %>% 
-    fortify() %>%
-    mutate(region = as.numeric(region)) %>% # fortify a crééé un string au lieu d'un entier / fortify created a string instead of a numeric variable
-    left_join(data.frame(myshp@data) %>%
-                rename(region = OBJECTID) %>%
-                mutate(region = region - 1), 
-              by = c("region"))
-  rm(myshp)
-  rm(i)
+  shp_list[[i]] <- st_read(paste0(map_df[i, "name"],"/","mli_admbnda_adm", i ,"_pop_2017.shp"))
 }
 
-map_region <- shp_list[[1]] %>% as_data_frame()
-map_cercles <- shp_list[[2]] %>% as_data_frame()
-map_communes <- shp_list[[3]] %>% as_data_frame()
+map_region_sf <- shp_list[[1]]
+map_district_sf <- shp_list[[2]]
+map_municipality_sf <- shp_list[[3]]
 
 ### Remove unneeded objects
 #Zip files
@@ -121,13 +95,8 @@ for(i in 1:nrow(map_df)){
 # Objects in working environment
 rm(map_df, shp_list)
 
-
 ######################################################################################################
 ### SAUVEGARDE DES DONNEES / SAVING THE DATA
 ######################################################################################################
 
 save.image("presidential/presidential_data.RData")
-
-
-
-
